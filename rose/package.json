@@ -1,0 +1,14 @@
+{
+  "name": "glass-red-rose",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Ruby volume-glass rose in rain — three.js r186, static GitHub Pages",
+  "scripts": {
+    "start": "npx --yes serve -p 4173 .",
+    "dev": "npx --yes serve -p 4173 ."
+  },
+  "dependencies": {
+    "three": "0.186.0"
+  }
+}
