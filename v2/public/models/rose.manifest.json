@@ -1,0 +1,21 @@
+{
+  "tool": "node + three@0.186.0 GLTFExporter + pngjs",
+  "quality": "v2 parametric 48×24 dual-shell loft, 40 petals, lobe/ruffle silhouette (not Blender sculpt)",
+  "limits": [
+    "no micro-displacement sculpt / no photogrammetry",
+    "512² bake maps (shared UV domain)",
+    "undraco binary GLB",
+    "placeholder file materials (runtime ruby-glass + stem factories win)"
+  ],
+  "meshes": 52,
+  "approxTris": 221348,
+  "glbBytes": 4926768,
+  "glbMagic": "glTF",
+  "baseRotZ": "node extras userData.baseRotZ on Petal_* / Sepal_*",
+  "maps": {
+    "rose_thickness_png": 2599,
+    "rose_roughness_png": 102903,
+    "rose_veins_png": 129967
+  },
+  "naming": "Petal_*, Sepal_*, Stem, Thorn_*, Receptacle, StemAssembly"
+}
