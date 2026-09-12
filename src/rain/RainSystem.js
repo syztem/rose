@@ -5,7 +5,7 @@ import * as THREE from 'three/webgpu';
  * CPU-updated; stagger half the instances per frame to cut write cost.
  */
 export class RainSystem {
-  constructor({ count = 10000 } = {}) {
+  constructor({ count = 12000 } = {}) {
     this.count = count;
     this.speed = 4.8;
     this.wind = new THREE.Vector3(0.04, 0, 0.02);

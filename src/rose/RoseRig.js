@@ -39,18 +39,91 @@ export class RoseRig {
   }
 
   /**
+   * Existence probe for optional GLB.
+   * Static hosts often reject HEAD (405/501/403) while GET works — fall back to a
+   * cheap ranged GET before treating as missing. 404/network → false (procedural).
+   */
+  async _probeAsset(url) {
+    let methodBlocked = false;
+    try {
+      const head = await fetch(url, { method: 'HEAD' });
+      if (head.ok) return true;
+      methodBlocked =
+        head.status === 405 ||
+        head.status === 501 ||
+        head.status === 403 ||
+        /method\s*not\s*allowed/i.test(head.statusText || '');
+      // 404 and other misses: stay procedural, no GET retry
+      if (!methodBlocked) return false;
+    } catch {
+      // Network miss on HEAD — silent procedural
+      return false;
+    }
+
+    // Static hosts often reject HEAD while GET works
+    try {
+      const get = await fetch(url, {
+        method: 'GET',
+        headers: { Range: 'bytes=0-0' }
+      });
+      // 200 / 206 = present; 404 etc. = miss
+      if (get.ok || get.status === 206) {
+        try {
+          get.body?.cancel?.();
+        } catch {
+          /* ignore */
+        }
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Collect unique mesh materials (incl. multi-material arrays) from a graph.
+   */
+  _collectMaterials(root) {
+    const mats = new Set();
+    root.traverse((o) => {
+      if (!o.isMesh || o.material == null) return;
+      const m = o.material;
+      if (Array.isArray(m)) {
+        for (const x of m) if (x) mats.add(x);
+      } else {
+        mats.add(m);
+      }
+    });
+    return mats;
+  }
+
+  /**
+   * Dispose discarded GLTF file materials + their textures/maps.
+   * Never touches this.glass / this.stemGlass (factory-owned).
+   */
+  _disposeDiscardedMaterials(materials) {
+    for (const mat of materials) {
+      if (!mat || mat === this.glass || mat === this.stemGlass) continue;
+      for (const value of Object.values(mat)) {
+        if (value && value.isTexture && typeof value.dispose === 'function') {
+          value.dispose();
+        }
+      }
+      if (typeof mat.dispose === 'function') mat.dispose();
+    }
+  }
+
+  /**
    * Replace procedural body with authored GLB when present.
    * Expects meshes named Petal / Sepal / Stem / Receptacle (case-insensitive).
    * Materials from file are discarded; glass factories win.
    */
   async loadGLB(url = 'public/models/rose.glb') {
     const resolved = new URL(url, document.baseURI || window.location.href).href;
-    try {
-      const head = await fetch(resolved, { method: 'HEAD' });
-      if (!head.ok) return false; // no asset yet — stay procedural, silent
-    } catch {
-      return false;
-    }
+
+    const exists = await this._probeAsset(resolved);
+    if (!exists) return false; // no asset yet — stay procedural, silent
 
     const loader = new GLTFLoader();
     const draco = new DRACOLoader();
@@ -66,6 +139,9 @@ export class RoseRig {
       draco.dispose();
       return false;
     }
+
+    // Snapshot file materials before swap (unique set)
+    const fileMats = this._collectMaterials(gltf.scene);
 
     // tear down procedural geos (unique set)
     this._disposeGeometries();
@@ -99,6 +175,9 @@ export class RoseRig {
 
     for (const p of petals) p.material = this.glass;
     for (const s of sepals) s.material = this.stemGlass;
+
+    // File mats discarded for glass factories — free GPU resources
+    this._disposeDiscardedMaterials(fileMats);
 
     this.group.add(gltf.scene);
     box.setFromObject(this.group);

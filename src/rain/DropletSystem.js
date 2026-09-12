@@ -4,6 +4,7 @@ import { createWaterMaterial } from '../rose/GlassMaterials.js';
 /**
  * Hero water beads on petals — separate transmissive instances (IOR 1.333).
  * Cap ≤160. Single shared material.
+ * setCount gates CPU sim + instance writes (not only mesh.count draw).
  */
 export class DropletSystem {
   constructor(petalMeshes, { max = 120 } = {}) {
@@ -18,6 +19,8 @@ export class DropletSystem {
     this.mesh.name = 'WaterBeads';
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.mesh.count = this.max;
+    /** @type {number} active beads — CPU sim + writes gated here */
+    this.activeCount = this.max;
 
     this.drops = [];
     this._dummy = new THREE.Object3D();
@@ -30,8 +33,35 @@ export class DropletSystem {
     this._spawn();
   }
 
+  /**
+   * Cap active beads. Cuts CPU sim cost and instance writes, not only GPU draw count.
+   * When shrinking, clear hidden instance matrices once so stale draws never linger.
+   */
   setCount(n) {
-    this.mesh.count = Math.min(this.max, Math.max(0, n | 0));
+    const next = Math.min(this.max, Math.max(0, n | 0));
+    const prev = this.activeCount;
+    if (next === prev) {
+      this.mesh.count = next;
+      return;
+    }
+    if (next < prev) {
+      this._clearHiddenInstances(next, prev);
+    }
+    this.activeCount = next;
+    this.mesh.count = next;
+  }
+
+  /** Zero-scale + park matrices for slots [from, to) once after a shrink. */
+  _clearHiddenInstances(from, to) {
+    const dummy = this._dummy;
+    const end = Math.min(to, this.max);
+    for (let i = from; i < end; i++) {
+      dummy.scale.set(0, 0, 0);
+      dummy.position.set(0, -10, 0);
+      dummy.updateMatrix();
+      this.mesh.setMatrixAt(i, dummy.matrix);
+    }
+    if (from < end) this.mesh.instanceMatrix.needsUpdate = true;
   }
 
   _samplePetal(mesh) {
@@ -74,12 +104,14 @@ export class DropletSystem {
     this._writeInstances();
   }
 
+  /** Write instance matrices for active range only (hidden slots cleared in setCount). */
   _writeInstances() {
     const dummy = this._dummy;
-    const count = this.mesh.count;
-    for (let i = 0; i < this.max; i++) {
+    const count = this.activeCount;
+    if (count === 0) return;
+    for (let i = 0; i < count; i++) {
       const d = this.drops[i];
-      if (!d || i >= count) {
+      if (!d) {
         dummy.scale.set(0, 0, 0);
         dummy.position.set(0, -10, 0);
         dummy.updateMatrix();
@@ -98,10 +130,16 @@ export class DropletSystem {
   }
 
   update(dt, gravity = 9.8) {
+    const count = this.activeCount;
+    // Early-out: no sim, no instance writes when capped to zero
+    if (count === 0) return;
     if (!this.drops.length) return;
+
     const g = this._tmp.set(0, -gravity, 0);
-    for (let i = 0; i < this.drops.length; i++) {
+    // Active range only — full-count bead physics unchanged when count === max
+    for (let i = 0; i < count; i++) {
       const d = this.drops[i];
+      if (!d) continue;
       d.age += dt;
 
       const gn = g.dot(d.n);
@@ -130,10 +168,10 @@ export class DropletSystem {
         d.v.set(0, 0, 0);
       }
 
-      // cheap coalesce
+      // coalesce only within active range
       if (i > 0 && i % 7 === 0) {
         const o = this.drops[i - 1];
-        if (o.mesh === d.mesh && d.pos.distanceToSquared(o.pos) < 0.00014) {
+        if (o && o.mesh === d.mesh && d.pos.distanceToSquared(o.pos) < 0.00014) {
           d.mass += o.mass * 0.5;
           d.r = 0.004 * Math.cbrt(d.mass);
           o.mass *= 0.4;

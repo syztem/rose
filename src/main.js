@@ -109,7 +109,8 @@ async function main() {
   const droplets = new DropletSystem(rose.petalMeshes, { max: dropMax });
   scene.add(droplets.mesh);
 
-  const rainCount = igp ? 6000 : 10000;
+  // Profile budget (DESIGN-PLAN T10 / brief §12.8): discrete 120 drops + 12k rain; IGP 80 + 6k
+  const rainCount = igp ? 6000 : 12000;
   const rain = new RainSystem({ count: rainCount });
   scene.add(rain.mesh);
 
@@ -126,13 +127,27 @@ async function main() {
       rain,
       droplets
     });
-    hud.textContent =
+    // Profile proof (T10): live budget path counts — discrete 120/12k, IGP 80/6k
+    const profileLine = () =>
       'debug · three r' +
       THREE.REVISION +
       (composer.enabled ? ' · bloom' : '') +
       (igp ? ' · igp' : '') +
+      ' · drops ' +
+      droplets.activeCount +
+      '/' +
+      dropMax +
+      ' · rain ' +
+      rainCount +
       ' · ' +
       rose._source;
+    hud.textContent = profileLine();
+    // Keep HUD counts in sync when lil-gui setCount changes
+    const _setCount = droplets.setCount.bind(droplets);
+    droplets.setCount = (n) => {
+      _setCount(n);
+      hud.textContent = profileLine();
+    };
   } else {
     hud.innerHTML =
       'ruby glass · three r' +
